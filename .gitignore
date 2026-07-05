@@ -1,0 +1,11 @@
+# binaries / build
+/bin/
+*.exe
+*.out
+# log data dirs created by tests/CLI at runtime
+/data/
+*.store
+*.index
+# editor / OS
+.DS_Store
+.idea/
