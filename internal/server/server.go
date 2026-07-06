@@ -44,7 +44,11 @@ func NewGRPCServer(config *Config) (*grpc.Server, error) {
 //	2 err != nil → return nil, err
 //	3 return &api.ProduceResponse{Offset: off}, nil
 func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (*api.ProduceResponse, error) {
-	panic("TODO: s1 — 实现 Produce（Append 到 CommitLog，返回 offset）")
+	off, err := s.CommitLog.Append(req.Record.Value)
+	if err != nil {
+		return nil, err
+	}
+	return &api.ProduceResponse{Offset: off}, nil
 }
 
 // Consume 你来实现（按 offset 从 commit log 读一条，包成 Record 返回）：
@@ -54,7 +58,11 @@ func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (*api
 //	2 err != nil → return nil, err
 //	3 return &api.ConsumeResponse{Record: &api.Record{Value: value, Offset: req.Offset}}, nil
 func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (*api.ConsumeResponse, error) {
-	panic("TODO: s1 — 实现 Consume（按 offset Read，组装 Record）")
+	value, err := s.CommitLog.Read(req.Offset)
+	if err != nil {
+		return nil, err
+	}
+	return &api.ConsumeResponse{Record: &api.Record{Value: value, Offset: req.Offset}}, nil
 }
 
 // ConsumeStream 你来实现（服务端流式：从 req.Offset 起，把后续记录一条条推给客户端）：
@@ -69,5 +77,22 @@ func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (*api
 //	  5 req.Offset++                                   // 下一轮读下一条
 //	}
 func (s *grpcServer) ConsumeStream(req *api.ConsumeRequest, stream grpc.ServerStreamingServer[api.ConsumeResponse]) error {
-	panic("TODO: s2 — 实现 ConsumeStream（循环 Consume + Send + offset++）")
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		default:
+		}
+
+		res, err := s.Consume(stream.Context(), req)
+		if err != nil {
+			return err
+		}
+
+		if err := stream.Send(res); err != nil {
+			return err
+		}
+
+		req.Offset++
+	}
 }
