@@ -47,7 +47,22 @@ func newStore(f *os.File) (*store, error) {
 //	6 size += n（下一条记录接着往后落）
 //	7 返回 n, pos, nil
 func (s *store) Append(p []byte) (n uint64, pos uint64, err error) {
-	panic("TODO s1: store.Append —— 定长头 + payload 追加写")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pos = s.size
+
+	if err := binary.Write(s.buf, enc, uint64(len(p))); err != nil {
+		return 0, 0, err
+	}
+	if _, err := s.buf.Write(p); err != nil {
+		return 0, 0, err
+	}
+
+	n = uint64(lenWidth + len(p))
+	s.size += n
+
+	return n, pos, nil
 }
 
 // Read 你来实现（凭 pos 把一条记录读回来——先读头知道多长，再读那么多）：
@@ -60,7 +75,25 @@ func (s *store) Append(p []byte) (n uint64, pos uint64, err error) {
 //	5 从 pos+lenWidth 处 ReadAt 读出 payload
 //	6 返回 payload
 func (s *store) Read(pos uint64) ([]byte, error) {
-	panic("TODO s1: store.Read —— 先读 8 字节长度头，再读那么多 payload")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.buf.Flush(); err != nil {
+		return nil, err
+	}
+
+	header := make([]byte, lenWidth)
+	if _, err := s.File.ReadAt(header, int64(pos)); err != nil {
+		return nil, err
+	}
+
+	payloadLen := enc.Uint64(header)
+	payload := make([]byte, payloadLen)
+	if _, err := s.File.ReadAt(payload, int64(pos+lenWidth)); err != nil {
+		return nil, err
+	}
+
+	return payload, nil
 }
 
 // Close：已就位（AI 生成）。plumbing——落盘缓冲再关文件。
