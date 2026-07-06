@@ -3,6 +3,7 @@ package v1
 import (
 	"fmt"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -20,7 +21,7 @@ type ErrOffsetOutOfRange struct {
 //	1 import "google.golang.org/grpc/codes"（实现时补上这个 import）
 //	2 return status.New(codes.OutOfRange, fmt.Sprintf("offset out of range: %d", e.Offset))
 func (e ErrOffsetOutOfRange) GRPCStatus() *status.Status {
-	panic("TODO: s3 — 返回 status.New(codes.OutOfRange, ...)")
+	return status.New(codes.OutOfRange, fmt.Sprintf("offset out of range: %d", e.Offset))
 }
 
 // Error：已就位（AI 生成）。满足 error 接口，纯文本消息（给日志/人看）。

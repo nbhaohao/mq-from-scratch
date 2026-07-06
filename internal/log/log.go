@@ -1,13 +1,14 @@
 package log
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	v1 "github.com/nbhaohao/mini-mq/api/v1"
 )
 
 // Log：多个 segment 的门面（这是包里唯一对外的类型，首字母大写）。
@@ -114,7 +115,7 @@ func (l *Log) Read(off uint64) ([]byte, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("offset out of range: %d", off)
+	return nil, v1.ErrOffsetOutOfRange{Offset: off}
 }
 
 // LowestOffset 你来实现（整个 log 最老的可读 offset = 第一个段的 baseOffset）：
