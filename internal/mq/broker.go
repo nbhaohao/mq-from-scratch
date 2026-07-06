@@ -2,6 +2,7 @@ package mq
 
 import (
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 
@@ -75,7 +76,9 @@ func (t *Topic) NumPartitions() int { return len(t.partitions) }
 //
 // 注意：空 key（len==0）也能算（hash 出固定值，全落同一分区）——真 Kafka 空 key 走轮询，本课简化为按 hash。
 func (t *Topic) partitionFor(key []byte) int {
-	panic("TODO: s1 — hash(key) % 分区数")
+	h := fnv.New32a()
+	h.Write(key)
+	return int(h.Sum32() % uint32(len(t.partitions)))
 }
 
 // Produce 你来实现（按 key 路由到某分区，把 value 追加进那个分区的 log）：
@@ -85,7 +88,9 @@ func (t *Topic) partitionFor(key []byte) int {
 //	2 off, err := t.partitions[p].Append(value)
 //	3 return p, off, err
 func (t *Topic) Produce(key, value []byte) (partition int, offset uint64, err error) {
-	panic("TODO: s1 — partitionFor 定分区，再 Append 到该分区")
+	p := t.partitionFor(key)
+	off, err := t.partitions[p].Append(value)
+	return p, off, err
 }
 
 // Consume：已就位（AI 生成）。从指定分区按 offset 读一条（薄封装，路由已由 Produce 决定）。
