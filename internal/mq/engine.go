@@ -20,7 +20,7 @@ type Engine struct {
 	n      uint64        // 已写入条数 = 高水位；下一条写在 offset n
 	notify chan struct{} // s1：每次写入 close+swap = 广播「有新消息」
 
-	quit chan struct{} // s3：close 它 = 广播「该停了」
+	quit chan struct{}  // s3：close 它 = 广播「该停了」
 	once sync.Once      // s3：保证 quit 只 close 一次（关闭要幂等）
 	wg   sync.WaitGroup // s3：等所有 Spawn 出去的 worker 退出
 
@@ -81,7 +81,24 @@ func (e *Engine) writeLocked(v []byte) (uint64, error) {
 // 永远无法 broadcast，死锁)。而 close 换 channel 也在锁里，所以你抓到的要么是即将被关的、
 // 要么是新的——不会漏掉唤醒。
 func (e *Engine) Poll(from uint64, timeout time.Duration) (value []byte, ok bool, err error) {
-	panic("TODO: s1 · 实现长轮询 Poll")
+	deadline := time.After(timeout)
+
+	for {
+		e.mu.Lock()
+		if from < e.n {
+			v, err := e.log.Read(from)
+			e.mu.Unlock()
+			return v, true, err
+		}
+		ch := e.notify
+		e.mu.Unlock()
+
+		select {
+		case <-ch:
+		case <-deadline:
+			return nil, false, nil
+		}
+	}
 }
 
 // Produce 你来实现（并发安全地写入一条消息，返回它的 offset）：
@@ -97,7 +114,9 @@ func (e *Engine) Poll(from uint64, timeout time.Duration) (value []byte, ok bool
 // 另一路子是「每 partition 一个专职 writer goroutine + channel 收活」，靠「只有一个 goroutine 碰 log」
 // 免锁——Kafka/多数 LSM 引擎走后者。本课先用 Mutex 把正确性拿到手。
 func (e *Engine) Produce(v []byte) (uint64, error) {
-	panic("TODO: s2 · 实现并发安全的 Produce")
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.writeLocked(v)
 }
 
 // Spawn：已就位（AI 生成）。派一个受管的 worker goroutine：登记到 wg，
@@ -112,15 +131,19 @@ func (e *Engine) Spawn(worker func(quit <-chan struct{})) {
 
 // Shutdown 你来实现（优雅关闭：广播「该停了」+ 阻塞等所有 worker 真正退出）：
 // 这就是补 db 课 0904 欠下的并发债。关键三点：
+//
 //   - close(quit) 是「一对多广播」：一次 close，所有 select 在 quit 上的 worker 同时收到零值。
 //     （不能用「发 N 个值」——你不知道有几个 worker，close 天然广播给全部。）
+//
 //   - 用 once 保证只 close 一次：重复 close 已关闭的 channel 会 panic，关闭必须幂等。
+//
 //   - wg.Wait() 把「发了关闭信号」升级成「确认都停了」：返回后没有 worker 还在跑，可以安全释放资源。
 //
-//	1 e.once.Do(func() { close(e.quit) })
-//	2 e.wg.Wait()
+//     1 e.once.Do(func() { close(e.quit) })
+//     2 e.wg.Wait()
 func (e *Engine) Shutdown() {
-	panic("TODO: s3 · 实现优雅关闭 Shutdown")
+	e.once.Do(func() { close(e.quit) })
+	e.wg.Wait()
 }
 
 // Release：已就位（AI 生成）。归还一个令牌（消费/ack 完一条就调它腾出容量）。
@@ -128,15 +151,26 @@ func (e *Engine) Release() { <-e.slots }
 
 // Acquire 你来实现（背压闸门：占一个在途名额，占满时按 block 决定阻塞还是拒绝）：
 // slots 是容量 maxInflight 的有界 channel，塞进一个空结构体 = 占一个名额，塞满 = 已达在途上限。
+//
 //   - block=true：`e.slots <- struct{}{}` 满时会**阻塞**生产者，直到别处 Release 腾位——这就是背压
 //     （下游慢，就让上游等，而不是无限堆积到 OOM）。
+//
 //   - block=false：select + default 试一下，满就立刻 return false = **限流/丢弃**(load shedding)，不等。
 //
-//	1 if block { e.slots <- struct{}{}; return true }
-//	2 select {
-//	3   case e.slots <- struct{}{}: return true
-//	4   default: return false        // 满 → 非阻塞拒绝
-//	5 }
+//     1 if block { e.slots <- struct{}{}; return true }
+//     2 select {
+//     3   case e.slots <- struct{}{}: return true
+//     4   default: return false        // 满 → 非阻塞拒绝
+//     5 }
 func (e *Engine) Acquire(block bool) bool {
-	panic("TODO: s4 · 实现背压闸门 Acquire")
+	if block {
+		e.slots <- struct{}{}
+		return true
+	}
+	select {
+	case e.slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
 }
