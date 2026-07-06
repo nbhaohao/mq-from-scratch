@@ -29,7 +29,13 @@ func decodeOffset(b []byte) (offsetEntry, error) {
 //	3 _, err = b.offsets.Append(data)
 //	4 return err
 func (b *Broker) CommitOffset(group, topic string, partition int, offset uint64) error {
-	panic("TODO: s2 — 编码 offsetEntry 后 Append 到内部 offsets log")
+	e := offsetEntry{Group: group, Topic: topic, Partition: partition, Offset: offset}
+	data, err := encodeOffset(e)
+	if err != nil {
+		return err
+	}
+	_, err = b.offsets.Append(data)
+	return err
 }
 
 // FetchOffset 你来实现（读回某 group 在某 topic/partition 上「最后一次」提交的位点）：
@@ -50,5 +56,23 @@ func (b *Broker) CommitOffset(group, topic string, partition int, offset uint64)
 //
 // ponytail: 全表扫描 O(n)，n 小无所谓；Kafka 靠日志压缩(compaction)只留每 key 最新一条来控规模。
 func (b *Broker) FetchOffset(group, topic string, partition int) (offset uint64, found bool, err error) {
-	panic("TODO: s2 — 扫 offsets log，取最后一条匹配的位点")
+	low, _ := b.offsets.LowestOffset()
+	high, _ := b.offsets.HighestOffset()
+
+	for off := low; off <= high; off++ {
+		data, err := b.offsets.Read(off)
+		if err != nil {
+			break
+		}
+		e, err := decodeOffset(data)
+		if err != nil {
+			continue
+		}
+		if e.Group == group && e.Topic == topic && e.Partition == partition {
+			offset = e.Offset
+			found = true
+		}
+	}
+
+	return offset, found, nil
 }
