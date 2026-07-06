@@ -50,12 +50,36 @@ func NewDeliverer(part *log.Log, high uint64, visibility time.Duration) *Deliver
 //	  }
 //	3 return 0, nil, false, nil                                // 没有可投的
 func (d *Deliverer) Receive(now time.Time) (offset uint64, value []byte, ok bool, err error) {
-	panic("TODO: s3 — 找第一条『未 ack 且（没发过或已超时）』的消息，标记飞行中并返回")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for off := uint64(0); off < d.high; off++ {
+		if d.acked[off] {
+			continue
+		}
+		deadline, flying := d.inflight[off]
+		if flying && now.Before(deadline) {
+			continue
+		}
+
+		value, err := d.part.Read(off)
+		if err != nil {
+			return 0, nil, false, err
+		}
+		d.inflight[off] = now.Add(d.visibility)
+		return off, value, true, nil
+	}
+
+	return 0, nil, false, nil
 }
 
 // Ack 你来实现（确认某条已处理完，永久删除、不再重投）：
 //
 //	加锁；d.acked[offset] = true；delete(d.inflight, offset)
 func (d *Deliverer) Ack(offset uint64) {
-	panic("TODO: s3 — 标记 acked 并从 inflight 移除")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.acked[offset] = true
+	delete(d.inflight, offset)
 }
