@@ -25,5 +25,12 @@ func NewDedup() *Dedup {
 //	3 d.seen[id] = true               // 首见 → 记下
 //	4 return false
 func (d *Dedup) Seen(id string) bool {
-	panic("TODO: s4 — 见过返回 true，首见记录并返回 false（锁内原子完成）")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.seen[id] {
+		return true
+	}
+	d.seen[id] = true
+	return false
 }
