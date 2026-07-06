@@ -17,9 +17,10 @@ const lenWidth = 8
 // 这就是 commit log 的最底层——你在 db 课 0104 写过的 WAL fsync，是同一个东西。
 type store struct {
 	*os.File
-	mu   sync.Mutex
-	buf  *bufio.Writer
-	size uint64
+	mu    sync.Mutex
+	buf   *bufio.Writer
+	size  uint64
+	syncs int // m05: 已 fsync 次数，供 benchmark/测试观察「每条 fsync」vs「批量 fsync」的频率差
 }
 
 // newStore：已就位（AI 生成）。构造器/plumbing——包住一个 *os.File，
@@ -94,6 +95,20 @@ func (s *store) Read(pos uint64) ([]byte, error) {
 	}
 
 	return payload, nil
+}
+
+// Sync：已就位（AI 生成）。m05 引入的「真落盘」原语——
+// m01 的 Append 只写到 bufio / OS 页缓存，断电会丢；只有 fsync（File.Sync）
+// 才逼 OS 把页缓存刷到物理磁盘，之后才算真持久。这一步是全链路最贵的 syscall，
+// 也是 s2 pprof 里会看到的热点、group commit 要摊薄的对象。syncs 计数供观察 fsync 频率。
+func (s *store) Sync() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.buf.Flush(); err != nil {
+		return err
+	}
+	s.syncs++
+	return s.File.Sync()
 }
 
 // Close：已就位（AI 生成）。plumbing——落盘缓冲再关文件。
