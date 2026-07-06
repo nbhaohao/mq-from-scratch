@@ -1,6 +1,7 @@
 package log
 
 import (
+	"io"
 	"os"
 
 	"github.com/tysonmote/gommap"
@@ -55,7 +56,26 @@ func newIndex(f *os.File, c Config) (*index, error) {
 //	6 pos = enc.Uint64(mmap[pos+offWidth : pos+entWidth])
 //	7 return out, pos, nil
 func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
-	panic("TODO s2: index.Read —— in==-1 取最后一条；越界返回 io.EOF（记得 import io）")
+	if i.size == 0 {
+		return 0, 0, io.EOF
+	}
+
+	var entryIdx uint32
+	if in == -1 {
+		entryIdx = uint32(i.size/entWidth) - 1
+	} else {
+		entryIdx = uint32(in)
+	}
+
+	byteOff := uint64(entryIdx) * entWidth
+	if i.size < byteOff+entWidth {
+		return 0, 0, io.EOF
+	}
+
+	out = enc.Uint32(i.mmap[byteOff : byteOff+offWidth])
+	pos = enc.Uint64(i.mmap[byteOff+offWidth : byteOff+entWidth])
+
+	return out, pos, nil
 }
 
 // Write 你来实现（追加一条 offset→pos 映射到 mmap 尾部）：
@@ -67,7 +87,15 @@ func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
 //	4 size += entWidth（下一条项往后挪）
 //	5 return nil
 func (i *index) Write(off uint32, pos uint64) error {
-	panic("TODO s2: index.Write —— 定长追加到 mmap 尾；写满返回 io.EOF")
+	if uint64(len(i.mmap)) < i.size+entWidth {
+		return io.EOF
+	}
+
+	enc.PutUint32(i.mmap[i.size:i.size+offWidth], off)
+	enc.PutUint64(i.mmap[i.size+offWidth:i.size+entWidth], pos)
+	i.size += entWidth
+
+	return nil
 }
 
 // Close：已就位（AI 生成）。plumbing——刷 mmap、刷文件、把撑大的文件截回真实 size 再关。
