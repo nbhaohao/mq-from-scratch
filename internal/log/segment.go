@@ -61,7 +61,19 @@ func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 //	4 s.nextOffset++（下一条往后排）
 //	5 return cur, nil
 func (s *segment) Append(p []byte) (offset uint64, err error) {
-	panic("TODO s3: segment.Append —— store 落字节拿 pos，index 记「相对 offset→pos」，nextOffset++")
+	cur := s.nextOffset
+
+	_, pos, err := s.store.Append(p)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.index.Write(uint32(s.nextOffset-s.baseOffset), pos); err != nil {
+		return 0, err
+	}
+
+	s.nextOffset++
+
+	return cur, nil
 }
 
 // Read 你来实现（凭绝对 offset 取回记录：先查 index 拿 pos，再去 store 读）：
@@ -71,7 +83,11 @@ func (s *segment) Append(p []byte) (offset uint64, err error) {
 //	2 去 store 读：s.store.Read(pos)
 //	3 return 读到的 []byte
 func (s *segment) Read(off uint64) ([]byte, error) {
-	panic("TODO s3: segment.Read —— 绝对 offset 减 baseOffset 查 index 拿 pos，再去 store 读")
+	_, pos, err := s.index.Read(int64(off - s.baseOffset))
+	if err != nil {
+		return nil, err
+	}
+	return s.store.Read(pos)
 }
 
 // IsMaxed 你来实现（本段是否该滚动了——store 或 index 任一撑满即满）：
@@ -79,7 +95,7 @@ func (s *segment) Read(off uint64) ([]byte, error) {
 //
 //	return s.store.size >= MaxStoreBytes || s.index.size >= MaxIndexBytes
 func (s *segment) IsMaxed() bool {
-	panic("TODO s3: segment.IsMaxed —— store 或 index 任一超过阈值即返回 true")
+	return s.store.size >= s.config.Segment.MaxStoreBytes || s.index.size >= s.config.Segment.MaxIndexBytes
 }
 
 // Close：已就位（AI 生成）。plumbing——先关 index 再关 store。
