@@ -1,0 +1,29 @@
+// 已就位（AI 生成）：mini-mq 的 gRPC 契约（IDL）。
+// 这是「服务的公开接口定义」——客户端和服务端都从它生成代码，语言无关。
+// 改它 → 重新 `protoc` 生成 log.pb.go / log_grpc.pb.go（见 Makefile 的 gen 目标）。
+syntax = "proto3";
+
+package mq.v1;
+
+option go_package = "github.com/nbhaohao/mini-mq/api/v1";
+
+// Record：一条消息。m01 的 log 存的是裸 []byte，这里把它升级成结构化 Record
+// （value = 消息体，offset = 它在 log 里的绝对序号）。offset 由服务端分配、回填。
+message Record {
+  bytes value = 1;
+  uint64 offset = 2;
+}
+
+message ProduceRequest  { Record record = 1; }
+message ProduceResponse { uint64 offset = 1; }
+
+message ConsumeRequest  { uint64 offset = 1; }
+message ConsumeResponse { Record record = 1; }
+
+// Log 服务：produce 写一条、consume 按 offset 读一条、consumeStream 从某 offset 起
+// 持续把后续记录一条条推给客户端（服务端流式）。
+service Log {
+  rpc Produce(ProduceRequest) returns (ProduceResponse) {}
+  rpc Consume(ConsumeRequest) returns (ConsumeResponse) {}
+  rpc ConsumeStream(ConsumeRequest) returns (stream ConsumeResponse) {}
+}
